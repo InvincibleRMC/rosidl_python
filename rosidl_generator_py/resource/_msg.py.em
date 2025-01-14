@@ -63,8 +63,6 @@ for member in message.structure.members:
             type_imports.add('from collections.abc import MutableSequence')
 
     if isinstance(member.type, AbstractNestedType):
-        type_annotations_getter[member.name] = ANY
-
         type_annotation = (f'Union[{type_annotation}Sequence[{python_type}], '
                            f'Set[{python_type}], UserList[{python_type}]]')
 
