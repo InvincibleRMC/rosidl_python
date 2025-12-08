@@ -512,6 +512,7 @@ if isinstance(member.type, (Array, AbstractSequence)):
                     "The '@(member.name)' numpy.ndarray() must have the dtype of '@(SPECIAL_NESTED_BASIC_TYPES[member.type.value_type.typename]['dtype'])'"
                 assert value.size == @(member.type.size), \
                     "The '@(member.name)' numpy.ndarray() must have a size of @(member.type.size)"
+                assert value.flags.contiguous, 'The numpy.ndarray must be contiguous.'
                 self._@(member.name) = value
                 return
 @[    elif isinstance(member.type, AbstractSequence)]@
@@ -661,7 +662,7 @@ bound = 1.7976931348623157e+308
 @[  end if]@
 @[  if isinstance(member.type, AbstractNestedType) and isinstance(member.type.value_type, BasicType) and member.type.value_type.typename in SPECIAL_NESTED_BASIC_TYPES]@
 @[    if isinstance(member.type, Array)]@
-        self._@(member.name) = numpy.array(value, dtype=@(SPECIAL_NESTED_BASIC_TYPES[member.type.value_type.typename]['dtype']))
+        self._@(member.name) = numpy.ascontiguousarray(value, dtype=@(SPECIAL_NESTED_BASIC_TYPES[member.type.value_type.typename]['dtype']))
 @[    elif isinstance(member.type, AbstractSequence)]@
         # type ignore below fixed in mypy 1.17+ see mypy#19421
         self._@(member.name) = array.array('@(SPECIAL_NESTED_BASIC_TYPES[member.type.value_type.typename]['type_code'])', value)  # type: ignore[assignment]

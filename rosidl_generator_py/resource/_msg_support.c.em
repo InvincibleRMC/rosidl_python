@@ -3,6 +3,7 @@
 @{
 from rosidl_pycommon import convert_camel_case_to_lower_case_underscore
 from rosidl_generator_py.generate_py_impl import SPECIAL_NESTED_BASIC_TYPES
+from rosidl_generator_py.generate_py_impl import is_member_numpy_array
 from rosidl_parser.definition import AbstractNestedType
 from rosidl_parser.definition import AbstractSequence
 from rosidl_parser.definition import AbstractString
@@ -277,11 +278,8 @@ nested_type = '__'.join(type_.namespaced_name())
 @[    else]@
     {
 @[    end if]@
-@[    if isinstance(member.type, Array) and isinstance(member.type.value_type, BasicType) and member.type.value_type.typename in SPECIAL_NESTED_BASIC_TYPES]@
-      // TODO(dirk-thomas) use a better way to check the type before casting
-      assert(field->ob_type != NULL);
-      assert(field->ob_type->tp_name != NULL);
-      assert(strcmp(field->ob_type->tp_name, "numpy.ndarray") == 0);
+@[    if is_member_numpy_array(member)]@
+      assert(PyArray_Check(field));
       PyArrayObject * seq_field = (PyArrayObject *)field;
       Py_INCREF(seq_field);
       assert(PyArray_NDIM(seq_field) == 1);
@@ -324,10 +322,15 @@ nested_type = '__'.join(type_.namespaced_name())
 @[      end if]@
       @primitive_msg_type_to_c(member.type.value_type) * dest = ros_message->@(member.name).data;
 @[    else]@
-      Py_ssize_t size = @(member.type.size);
+      const Py_ssize_t size = @(member.type.size);
       @primitive_msg_type_to_c(member.type.value_type) * dest = ros_message->@(member.name);
 @[    end if]@
+@[    if is_member_numpy_array(member)]@
+      @(SPECIAL_NESTED_BASIC_TYPES[member.type.value_type.typename]['dtype'].replace('numpy.', 'npy_')) * src = (@(SPECIAL_NESTED_BASIC_TYPES[member.type.value_type.typename]['dtype'].replace('numpy.', 'npy_')) *)PyArray_DATA(seq_field);
+      memcpy(dest, src, size * sizeof(@primitive_msg_type_to_c(member.type.value_type)));
+@[    else]@
       for (Py_ssize_t i = 0; i < size; ++i) {
+@[    end if]@
 @[    if not isinstance(member.type, Array) or not isinstance(member.type.value_type, BasicType) or member.type.value_type.typename not in SPECIAL_NESTED_BASIC_TYPES]@
         PyObject * item = PySequence_Fast_GET_ITEM(seq_field, i);
         if (!item) {
@@ -336,8 +339,7 @@ nested_type = '__'.join(type_.namespaced_name())
           return false;
         }
 @[    end if]@
-@[    if isinstance(member.type, Array) and isinstance(member.type.value_type, BasicType) and member.type.value_type.typename in SPECIAL_NESTED_BASIC_TYPES]@
-        @primitive_msg_type_to_c(member.type.value_type) tmp = *(@(SPECIAL_NESTED_BASIC_TYPES[member.type.value_type.typename]['dtype'].replace('numpy.', 'npy_')) *)PyArray_GETPTR1(seq_field, i);
+@[    if is_member_numpy_array(member)]@
 @[    elif isinstance(member.type.value_type, BasicType) and member.type.value_type.typename == 'char']@
         assert(PyUnicode_Check(item));
         PyObject * encoded_item = PyUnicode_AsUTF8String(item);
@@ -422,10 +424,13 @@ nested_type = '__'.join(type_.namespaced_name())
         assert(PyLong_Check(item));
         @primitive_msg_type_to_c(member.type.value_type) tmp = PyLong_AsUnsignedLongLong(item);
 @[    end if]@
-@[    if isinstance(member.type.value_type, BasicType)]@
+@[    if is_member_numpy_array(member)]@
+@[    elif isinstance(member.type.value_type, BasicType)]@
         memcpy(&dest[i], &tmp, sizeof(@primitive_msg_type_to_c(member.type.value_type)));
 @[    end if]@
+@[    if not is_member_numpy_array(member)]@
       }
+@[    end if]@
       Py_DECREF(seq_field);
     }
 @[  elif isinstance(member.type, BasicType) and member.type.typename == 'char']@
@@ -557,14 +562,12 @@ if isinstance(type_, AbstractNestedType):
     if (!field) {
       return NULL;
     }
-    assert(field->ob_type != NULL);
-    assert(field->ob_type->tp_name != NULL);
-    assert(strcmp(field->ob_type->tp_name, "numpy.ndarray") == 0);
+    assert(PyArray_Check(field));
     PyArrayObject * seq_field = (PyArrayObject *)field;
     assert(PyArray_NDIM(seq_field) == 1);
     assert(PyArray_TYPE(seq_field) == @(SPECIAL_NESTED_BASIC_TYPES[member.type.value_type.typename]['dtype'].replace('numpy.', 'NPY_').upper()));
     assert(sizeof(@(SPECIAL_NESTED_BASIC_TYPES[member.type.value_type.typename]['dtype'].replace('numpy.', 'npy_'))) == sizeof(@primitive_msg_type_to_c(member.type.value_type)));
-    @(SPECIAL_NESTED_BASIC_TYPES[member.type.value_type.typename]['dtype'].replace('numpy.', 'npy_')) * dst = (@(SPECIAL_NESTED_BASIC_TYPES[member.type.value_type.typename]['dtype'].replace('numpy.', 'npy_')) *)PyArray_GETPTR1(seq_field, 0);
+    @(SPECIAL_NESTED_BASIC_TYPES[member.type.value_type.typename]['dtype'].replace('numpy.', 'npy_')) * dst = (@(SPECIAL_NESTED_BASIC_TYPES[member.type.value_type.typename]['dtype'].replace('numpy.', 'npy_')) *)PyArray_DATA(seq_field);
     @primitive_msg_type_to_c(member.type.value_type) * src = &(ros_message->@(member.name)[0]);
     memcpy(dst, src, @(member.type.size) * sizeof(@primitive_msg_type_to_c(member.type.value_type)));
     Py_DECREF(field);
@@ -663,7 +666,8 @@ nested_type = '__'.join(type_.namespaced_name())
     }
 @[    end if]@
 @[  elif isinstance(member.type, AbstractNestedType)]@
-@[    if isinstance(member.type, AbstractSequence)]@
+@[    if is_member_numpy_array(member)]@
+@[    elif isinstance(member.type, AbstractSequence)]@
     size_t size = ros_message->@(member.name).size;
     @primitive_msg_type_to_c(member.type.value_type) * src = ros_message->@(member.name).data;
 @[    else]@

@@ -227,7 +227,7 @@ def value_to_py(type_, value, array_as_tuple=False):
         type_.value_type.typename in SPECIAL_NESTED_BASIC_TYPES
     ):
         if isinstance(type_, Array):
-            return 'numpy.array((%s, ), dtype=%s)' % (
+            return 'numpy.ascontiguousarray((%s, ), dtype=%s)' % (
                 ', '.join(py_values),
                 SPECIAL_NESTED_BASIC_TYPES[type_.value_type.typename]['dtype'])
         if isinstance(type_, AbstractSequence):
@@ -290,6 +290,12 @@ def constant_value_to_py(type_, value):
         return quoted_string(value)
 
     assert False, "unknown constant type '%s'" % type_
+
+
+def is_member_numpy_array(member: Member) -> bool:
+    return isinstance(member.type, Array) and \
+        isinstance(member.type.value_type, BasicType) and \
+        member.type.value_type.typename in SPECIAL_NESTED_BASIC_TYPES
 
 
 def quoted_string(s: str) -> str:
